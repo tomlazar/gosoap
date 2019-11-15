@@ -6,36 +6,47 @@ import (
 	"reflect"
 )
 
+var tokens []xml.Token
+
 // MarshalXML envelope the body and encode to xml
-func (c process) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
-	tokens := &tokenData{}
+func (c Client) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
+
+	tokens = []xml.Token{}
 
 	//start envelope
-	if c.Client.Definitions == nil {
+	if c.Definitions == nil {
 		return fmt.Errorf("definitions is nil")
 	}
 
-	tokens.startEnvelope()
-	if len(c.Client.HeaderParams) > 0 {
-		tokens.startHeader(c.Client.HeaderName, c.Client.Definitions.Types[0].XsdSchema[0].TargetNamespace)
+	startEnvelope()
+	if len(c.HeaderParams) > 0 {
+		startHeader(c.HeaderName, c.Definitions.Types[0].XsdSchema[0].Imports[0].Namespace)
+		for k, v := range c.HeaderParams {
+			t := xml.StartElement{
+				Name: xml.Name{
+					Space: "",
+					Local: fmt.Sprintf("a:%v", k),
+				},
+			}
 
-		tokens.recursiveEncode(c.Client.HeaderParams)
+			tokens = append(tokens, t, xml.CharData(v), xml.EndElement{Name: t.Name})
+		}
 
-		tokens.endHeader(c.Client.HeaderName)
+		endHeader(c.HeaderName)
 	}
 
-	err := tokens.startBody(c.Request.Method, c.Client.Definitions.Types[0].XsdSchema[0].TargetNamespace)
+	err := startBody(c.Method, c.Definitions.Types[0].XsdSchema[0].Imports[0].Namespace)
 	if err != nil {
 		return err
 	}
 
-	tokens.recursiveEncode(c.Request.Params)
+	recursiveEncode(c.Params)
 
 	//end envelope
-	tokens.endBody(c.Request.Method)
-	tokens.endEnvelope()
+	endBody(c.Method)
+	endEnvelope()
 
-	for _, t := range tokens.data {
+	for _, t := range tokens {
 		err := e.EncodeToken(t)
 		if err != nil {
 			return err
@@ -45,11 +56,7 @@ func (c process) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
 	return e.Flush()
 }
 
-type tokenData struct {
-	data []xml.Token
-}
-
-func (tokens *tokenData) recursiveEncode(hm interface{}) {
+func recursiveEncode(hm interface{}) {
 	v := reflect.ValueOf(hm)
 
 	switch v.Kind() {
@@ -62,37 +69,36 @@ func (tokens *tokenData) recursiveEncode(hm interface{}) {
 				},
 			}
 
-			tokens.data = append(tokens.data, t)
-			tokens.recursiveEncode(v.MapIndex(key).Interface())
-			tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
+			tokens = append(tokens, t)
+			recursiveEncode(v.MapIndex(key).Interface())
+			tokens = append(tokens, xml.EndElement{Name: t.Name})
 		}
 	case reflect.Slice:
 		for i := 0; i < v.Len(); i++ {
-			tokens.recursiveEncode(v.Index(i).Interface())
+			recursiveEncode(v.Index(i).Interface())
 		}
 	case reflect.String:
 		content := xml.CharData(v.String())
-		tokens.data = append(tokens.data, content)
+		tokens = append(tokens, content)
 	}
 }
 
-func (tokens *tokenData) startEnvelope() {
+func startEnvelope() {
 	e := xml.StartElement{
 		Name: xml.Name{
 			Space: "",
 			Local: "soap:Envelope",
 		},
 		Attr: []xml.Attr{
-			{Name: xml.Name{Space: "", Local: "xmlns:xsi"}, Value: "http://www.w3.org/2001/XMLSchema-instance"},
-			{Name: xml.Name{Space: "", Local: "xmlns:xsd"}, Value: "http://www.w3.org/2001/XMLSchema"},
-			{Name: xml.Name{Space: "", Local: "xmlns:soap"}, Value: "http://schemas.xmlsoap.org/soap/envelope/"},
+			{Name: xml.Name{Space: "", Local: "xmlns:soap"}, Value: "http://www.w3.org/2003/05/soap-envelope"},
+			{Name: xml.Name{Space: "", Local: "xmlns:a"}, Value: "http://www.w3.org/2005/08/addressing"},
 		},
 	}
 
-	tokens.data = append(tokens.data, e)
+	tokens = append(tokens, e)
 }
 
-func (tokens *tokenData) endEnvelope() {
+func endEnvelope() {
 	e := xml.EndElement{
 		Name: xml.Name{
 			Space: "",
@@ -100,10 +106,10 @@ func (tokens *tokenData) endEnvelope() {
 		},
 	}
 
-	tokens.data = append(tokens.data, e)
+	tokens = append(tokens, e)
 }
 
-func (tokens *tokenData) startHeader(m, n string) {
+func startHeader(m, n string) {
 	h := xml.StartElement{
 		Name: xml.Name{
 			Space: "",
@@ -112,7 +118,7 @@ func (tokens *tokenData) startHeader(m, n string) {
 	}
 
 	if m == "" || n == "" {
-		tokens.data = append(tokens.data, h)
+		tokens = append(tokens, h)
 		return
 	}
 
@@ -126,12 +132,12 @@ func (tokens *tokenData) startHeader(m, n string) {
 		},
 	}
 
-	tokens.data = append(tokens.data, h, r)
+	tokens = append(tokens, h, r)
 
 	return
 }
 
-func (tokens *tokenData) endHeader(m string) {
+func endHeader(m string) {
 	h := xml.EndElement{
 		Name: xml.Name{
 			Space: "",
@@ -140,7 +146,7 @@ func (tokens *tokenData) endHeader(m string) {
 	}
 
 	if m == "" {
-		tokens.data = append(tokens.data, h)
+		tokens = append(tokens, h)
 		return
 	}
 
@@ -151,11 +157,11 @@ func (tokens *tokenData) endHeader(m string) {
 		},
 	}
 
-	tokens.data = append(tokens.data, r, h)
+	tokens = append(tokens, r, h)
 }
 
 // startToken initiate body of the envelope
-func (tokens *tokenData) startBody(m, n string) error {
+func startBody(m, n string) error {
 	b := xml.StartElement{
 		Name: xml.Name{
 			Space: "",
@@ -177,13 +183,13 @@ func (tokens *tokenData) startBody(m, n string) error {
 		},
 	}
 
-	tokens.data = append(tokens.data, b, r)
+	tokens = append(tokens, b, r)
 
 	return nil
 }
 
 // endToken close body of the envelope
-func (tokens *tokenData) endBody(m string) {
+func endBody(m string) {
 	b := xml.EndElement{
 		Name: xml.Name{
 			Space: "",
@@ -198,5 +204,5 @@ func (tokens *tokenData) endBody(m string) {
 		},
 	}
 
-	tokens.data = append(tokens.data, r, b)
+	tokens = append(tokens, r, b)
 }

@@ -3,10 +3,7 @@ package gosoap
 import (
 	"encoding/xml"
 	"golang.org/x/net/html/charset"
-	"io"
 	"net/http"
-	"net/url"
-	"os"
 )
 
 type wsdlDefinitions struct {
@@ -24,7 +21,7 @@ type wsdlBinding struct {
 	Name         string           `xml:"name,attr"`
 	Type         string           `xml:"type,attr"`
 	Operations   []*wsdlOperation `xml:"http://schemas.xmlsoap.org/wsdl/ operation"`
-	SoapBindings []*soapBinding   `xml:"http://schemas.xmlsoap.org/wsdl/soap/ binding"`
+	SoapBindings []*soapBinding   `xml:"http://schemas.xmlsoap.org/wsdl/soap12/ binding"`
 }
 
 type soapBinding struct {
@@ -60,7 +57,7 @@ type wsdlOperation struct {
 	Inputs         []*wsdlOperationInput  `xml:"http://schemas.xmlsoap.org/wsdl/ input"`
 	Outputs        []*wsdlOperationOutput `xml:"http://schemas.xmlsoap.org/wsdl/ output"`
 	Faults         []*wsdlOperationFault  `xml:"http://schemas.xmlsoap.org/wsdl/ fault"`
-	SoapOperations []*soapOperation       `xml:"http://schemas.xmlsoap.org/wsdl/soap/ operation"`
+	SoapOperations []*soapOperation       `xml:"http://schemas.xmlsoap.org/wsdl/soap12/ operation"`
 }
 
 type wsdlOperationInput struct {
@@ -87,7 +84,7 @@ type wsdlService struct {
 type wsdlPort struct {
 	Name          string         `xml:"name,attr"`
 	Binding       string         `xml:"binding,attr"`
-	SoapAddresses []*soapAddress `xml:"http://schemas.xmlsoap.org/wsdl/soap/ address"`
+	SoapAddresses []*soapAddress `xml:"http://schemas.xmlsoap.org/wsdl/soap12/ address"`
 }
 
 type soapAddress struct {
@@ -155,34 +152,15 @@ type xsdMaxInclusive struct {
 	Value string `xml:"value,attr"`
 }
 
-func getWsdlBody(u string) (reader io.ReadCloser, err error) {
-	parse, err := url.Parse(u)
-	if err != nil {
-		return nil, err
-	}
-	if parse.Scheme == "file" {
-		outFile, err := os.Open(parse.Path)
-		if err != nil {
-			return nil, err
-		}
-		return outFile, nil
-	}
+// getWsdlDefinitions sent request to the wsdl url and set definitions on struct
+func getWsdlDefinitions(u string) (wsdl *wsdlDefinitions, err error) {
 	r, err := http.Get(u)
 	if err != nil {
 		return nil, err
 	}
-	return r.Body, nil
-}
+	defer r.Body.Close()
 
-// getWsdlDefinitions sent request to the wsdl url and set definitions on struct
-func getWsdlDefinitions(u string) (wsdl *wsdlDefinitions, err error) {
-	reader, err := getWsdlBody(u)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	decoder := xml.NewDecoder(reader)
+	decoder := xml.NewDecoder(r.Body)
 	decoder.CharsetReader = charset.NewReaderLabel
 	err = decoder.Decode(&wsdl)
 
