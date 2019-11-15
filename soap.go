@@ -12,7 +12,7 @@ import (
 )
 
 // HeaderParams holds params specific to the header
-type HeaderParams map[string]string 
+type HeaderParams map[string]string
 
 // Params type is used to set the params in soap request
 type Params map[string]interface{}
@@ -73,7 +73,6 @@ func (c *Client) Call(m string, p Params) (err error) {
 	}
 
 	c.payload, err = xml.MarshalIndent(c, "", "    ")
-	fmt.Println(string(c.payload))
 	if err != nil {
 		return err
 	}
